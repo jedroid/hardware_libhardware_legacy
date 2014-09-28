@@ -91,8 +91,8 @@ static const char FIRMWARE_LOADER[]     = WIFI_FIRMWARE_LOADER;
 static const char DRIVER_PROP_NAME[]    = "wlan.driver.status";
 static const char SUPPLICANT_NAME[]     = "wpa_supplicant";
 static const char SUPP_PROP_NAME[]      = "init.svc.wpa_supplicant";
-static const char P2P_SUPPLICANT_NAME[] = "p2p_supplicant";
-static const char P2P_PROP_NAME[]       = "init.svc.p2p_supplicant";
+static const char P2P_SUPPLICANT_NAME[] = "wpa_supplicant";
+static const char P2P_PROP_NAME[]       = "init.svc.wpa_supplicant";
 static const char SUPP_CONFIG_TEMPLATE[]= "/system/etc/wifi/wpa_supplicant.conf";
 static const char SUPP_CONFIG_FILE[]    = "/data/misc/wifi/wpa_supplicant.conf";
 static const char P2P_CONFIG_FILE[]     = "/data/misc/wifi/p2p_supplicant.conf";
@@ -211,67 +211,15 @@ int is_wifi_driver_loaded() {
 
 int wifi_load_driver()
 {
-#ifdef WIFI_DRIVER_MODULE_PATH
-    char driver_status[PROPERTY_VALUE_MAX];
-    int count = 100; /* wait at most 20 seconds for completion */
 
-    if (is_wifi_driver_loaded()) {
-        return 0;
-    }
-
-    if (insmod(DRIVER_MODULE_PATH, DRIVER_MODULE_ARG) < 0)
-        return -1;
-
-    if (strcmp(FIRMWARE_LOADER,"") == 0) {
-        /* usleep(WIFI_DRIVER_LOADER_DELAY); */
-        property_set(DRIVER_PROP_NAME, "ok");
-    }
-    else {
-        property_set("ctl.start", FIRMWARE_LOADER);
-    }
-    sched_yield();
-    while (count-- > 0) {
-        if (property_get(DRIVER_PROP_NAME, driver_status, NULL)) {
-            if (strcmp(driver_status, "ok") == 0)
-                return 0;
-            else if (strcmp(DRIVER_PROP_NAME, "failed") == 0) {
-                wifi_unload_driver();
-                return -1;
-            }
-        }
-        usleep(200000);
-    }
-    property_set(DRIVER_PROP_NAME, "timeout");
-    wifi_unload_driver();
-    return -1;
-#else
     property_set(DRIVER_PROP_NAME, "ok");
     return 0;
-#endif
 }
 
 int wifi_unload_driver()
 {
-    usleep(200000); /* allow to finish interface down */
-#ifdef WIFI_DRIVER_MODULE_PATH
-    if (rmmod(DRIVER_MODULE_NAME) == 0) {
-        int count = 20; /* wait at most 10 seconds for completion */
-        while (count-- > 0) {
-            if (!is_wifi_driver_loaded())
-                break;
-            usleep(500000);
-        }
-        usleep(500000); /* allow card removal */
-        if (count) {
-            return 0;
-        }
-        return -1;
-    } else
-        return -1;
-#else
     property_set(DRIVER_PROP_NAME, "unloaded");
     return 0;
-#endif
 }
 
 int ensure_entropy_file_exists()
@@ -493,7 +441,7 @@ int wifi_start_supplicant(int p2p_supported)
     }
 
     /* Check whether already running */
-    if (property_get(supplicant_name, supp_status, NULL)
+    if (property_get(supplicant_prop_name, supp_status, NULL)
             && strcmp(supp_status, "running") == 0) {
         return 0;
     }
@@ -569,6 +517,8 @@ int wifi_stop_supplicant(int p2p_supported)
         strcpy(supplicant_name, SUPPLICANT_NAME);
         strcpy(supplicant_prop_name, SUPP_PROP_NAME);
     }
+
+    wifi_close_sockets();
 
     /* Check whether supplicant already stopped */
     if (property_get(supplicant_prop_name, supp_status, NULL)
